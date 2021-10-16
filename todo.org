@@ -1,0 +1,12 @@
+* Inbox
+** TODO Test out whether we can attach to an LSM Hook
+- [-] Build a basic eBPF program
+  + [-] Figure out how to build and get the VM linux file
+    - [X] install libbpfgo
+      + Currently libbpfgo installation has an error, possibly due to the shared library
+      + kubearmor/libbpf has illustrated certain steps to install it create vmlinux.h
+      + this step must be made reproducible
+      + in order to install libbpfgo we need to provide it the path of the libbpf shared .so
+    - [ ]
+
+*** [ ] Figure out which hook to attach
