@@ -1,20 +1,32 @@
 package main
 
 import (
-	"fmt"
+	"C"
+	"os"
+	"os/signal"
 
 	bpf "github.com/aquasecurity/libbpfgo"
 )
 
 func main() {
-	bpfModule, err := bpf.NewModuleFromFile("main.bpf.o")
-	if err != nil {
-		fmt.Errorf("There's an error %s", err.Error())
-	}
+	sig := make(chan os.Signal, 1)
+	signal.Notify(sig, os.Interrupt)
+
+	bpfModule, err := bpf.NewModuleFromFile("hello.bpf.o")
+	must(err)
 	defer bpfModule.Close()
 
 	err = bpfModule.BPFLoadObject()
+	must(err)
+
+	prog, err := bpfModule.GetProgram("hello")
+	must(err)
+	_, err = prog.AttachKprobe("sys_execve")
+	must(err)
+}
+
+func must(err error) {
 	if err != nil {
-		fmt.Println("There's an error %s", err.Error())
+		panic(err)
 	}
 }
