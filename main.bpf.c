@@ -1,38 +1,56 @@
 //+build ignore
-#include <linux/types.h>
+
 #ifdef asm_inline
 #undef asm_inline
 #define asm_inline asm
 #endif
 
-#include <linux/bpf.h>
+#include "vmlinux.h"
 #include <bpf/bpf_helpers.h>
+#include <bpf/bpf_tracing.h>
 
 typedef __u64 u64;
-
-/* TODO!! This is too generic for this example, where can we pull it from?
-*/
-#define BPF_MAP(_name, _type, _key_type, _value_type, _max_entries) \
-    struct bpf_map_def SEC("maps") _name = {                        \
-        .type = _type,                                              \
-        .key_size = sizeof(_key_type),                              \
-        .value_size = sizeof(_value_type),                          \
-        .max_entries = _max_entries,                                \
-    };
-
-#define BPF_HASH(_name, _key_type, _value_type) \
-    BPF_MAP(_name, BPF_MAP_TYPE_HASH, _key_type, _value_type, 10240);
-
-#define BPF_PERF_OUTPUT(_name) \
-    BPF_MAP(_name, BPF_MAP_TYPE_PERF_EVENT_ARRAY, int, __u32, 1024);
-
 char LICENSE[] SEC("license") = "Dual BSD/GPL";
 
-// Example: tracing a message on a kprobe
-SEC("kprobe/sys_execve")
-int hello(void *ctx)
+int monitored_pid = 0;
+int mprotect_count = 0;
+int bprm_count = 0;
+
+#define EPERM  1
+
+struct {
+    __uint(type, BPF_MAP_TYPE_PERF_EVENT_ARRAY);
+    __uint(key_size, sizeof(u32));
+    __uint(value_size, sizeof(u32));
+} events SEC(".maps");
+
+SEC("kprobe/sys_mmap")
+int kprobe__sys_mmap(struct pt_regs *ctx)
 {
-    bpf_trace_printk("I'm alive!");
+    int process = 2021;
+    bpf_perf_event_output(ctx, &events, BPF_F_CURRENT_CPU, &process, sizeof(int));
+
     return 0;
 }
 
+SEC("lsm/file_mprotect")
+int BPF_PROG(test_int_hook, struct vm_area_struct *vma,
+	     unsigned long reqprot, unsigned long prot, int ret)
+{
+    bpf_trace_printk("printing stuff", 4096);
+	if (ret != 0)
+		return ret;
+
+	__u32 pid = bpf_get_current_pid_tgid() >> 32;
+	int is_stack = 0;
+
+	is_stack = (vma->vm_start <= vma->vm_mm->start_stack &&
+		    vma->vm_end >= vma->vm_mm->start_stack);
+
+	if (is_stack && monitored_pid == pid) {
+		mprotect_count++;
+		ret = -EPERM;
+	}
+
+	return ret;
+}
